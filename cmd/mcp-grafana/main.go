@@ -462,18 +462,8 @@ func appendInstructions(base, extra string) string {
 	return base
 }
 
-func newServer(serverName, transport string, dt disabledTools, obs *observability.Observability, sessionIdleTimeoutMinutes int, instructionsAppend string) (*server.MCPServer, *mcpgrafana.SessionManager) {
-	sm := mcpgrafana.NewSessionManager(
-		mcpgrafana.WithSessionTTL(time.Duration(sessionIdleTimeoutMinutes)*time.Minute),
-		mcpgrafana.WithSessionMeterProvider(obs.MeterProvider()),
-	)
-
-	hooks := &server.Hooks{
-		OnRegisterSession:   []server.OnRegisterSessionHookFunc{sm.CreateSession},
-		OnUnregisterSession: []server.OnUnregisterSessionHookFunc{sm.RemoveSession},
-	}
-
-	hooks = observability.MergeHooks(hooks, obs.MCPHooks())
+func newServer(serverName string, dt disabledTools, obs *observability.Observability, instructionsAppend string) *server.MCPServer {
+	hooks := observability.MergeHooks(&server.Hooks{}, obs.MCPHooks())
 
 	instructions := appendInstructions(dt.buildInstructions(), instructionsAppend)
 
@@ -486,11 +476,9 @@ func newServer(serverName, transport string, dt disabledTools, obs *observabilit
 	}
 	s := server.NewMCPServer(serverName, mcpgrafana.Version(), serverOpts...)
 
-	sm.SetMCPServer(s)
-
 	dt.processTools(s)
 	mcpgrafana.RegisterAppResources(s)
-	return s, sm
+	return s
 }
 
 type tlsConfig struct {
@@ -796,8 +784,7 @@ func run(transport, addr, basePath, endpointPath string, logLevel slog.Level, dt
 		defer clientCache.Close()
 	}
 
-	s, sm := newServer(obs.ServerName, transport, dt, o, sessionIdleTimeoutMinutes, instructionsAppend)
-	defer sm.Close()
+	s := newServer(obs.ServerName, dt, o, instructionsAppend)
 
 	// Create a context that will be cancelled on shutdown
 	ctx, cancel := context.WithCancel(context.Background())
